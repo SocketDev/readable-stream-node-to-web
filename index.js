@@ -1,58 +1,85 @@
 
 /* global ReadableStream */
 
-module.exports = nodeToWeb
-module.exports.WEBSTREAM_SUPPORT = typeof ReadableStream !== 'undefined'
+class NodeToWebStreamSource {
+  _readableCallback = null
+  _controller = null
 
-function nodeToWeb (nodeStream) {
-  // Assumes the nodeStream has not ended/closed
-  if (!module.exports.WEBSTREAM_SUPPORT) throw new Error('No web ReadableStream support')
+  constructor (nodeStream) {
+    this._nodeStream = nodeStream
+  }
 
-  var destroyed = false
-  var listeners = {}
+  // Stream methods
+  start (controller) {
+    this._controller = controller
 
-  function start (controller) {
-    listeners['data'] = onData
-    listeners['end'] = onData
-    listeners['end'] = onDestroy
-    listeners['close'] = onDestroy
-    listeners['error'] = onDestroy
-    for (var name in listeners) nodeStream.on(name, listeners[name])
+    this._nodeStream.on('close', this._onClose)
+    this._nodeStream.on('end', this._onClose)
+    this._nodeStream.on('error', this._onError)
+    this._nodeStream.on('readable', this._onReadable)
+  }
 
-    nodeStream.pause()
+  async pull () {
+    console.log('pull')
+    let isFirstRead = true
 
-    function onData (chunk) {
-      if (destroyed) return
-      controller.enqueue(chunk)
-      nodeStream.pause()
+    while (true) {
+      const chunk = this._nodeStream.read()
+      if (chunk === null) {
+        if (isFirstRead) {
+          // Wait for at least one chunk
+          await new Promise((resolve) => {
+            this._readableCallback = resolve
+          })
+        } else {
+          break
+        }
+      }
+
+      isFirstRead = false
+      console.log('enqueue')
+      this._controller.enqueue(chunk)
     }
+  }
 
-    function onDestroy (err) {
-      if (destroyed) return
-      destroyed = true
+  cancel () {
+    this._destroy()
+    this._nodeStream.destroy()
+  }
 
-      for (var name in listeners) nodeStream.removeListener(name, listeners[name])
+  // Internal methods
+  _onClose = () => {
+    console.log('close')
+    this._destroy()
+    this._controller.close()
+  }
 
-      if (err) controller.error(err)
-      else controller.close()
+  _onError = (err) => {
+    console.log('error')
+    this._destroy()
+    this._controller.error(err)
+  }
+
+  _onReadable = () => {
+    console.log('readable')
+    if (this._readableCallback) {
+      this._readableCallback()
+      this._readableCallback = null
     }
   }
 
-  function pull () {
-    if (destroyed) return
-    nodeStream.resume()
+  _destroy () {
+    this._nodeStream.off('close', this._onClose)
+    this._nodeStream.off('end', this._onClose)
+    this._nodeStream.off('error', this._onError)
+    this._nodeStream.off('readable', this._onReadable)
   }
-
-  function cancel () {
-    destroyed = true
-
-    for (var name in listeners) nodeStream.removeListener(name, listeners[name])
-
-    nodeStream.push(null)
-    nodeStream.pause()
-    if (nodeStream.destroy) nodeStream.destroy()
-    else if (nodeStream.close) nodeStream.close()
-  }
-
-  return new ReadableStream({start: start, pull: pull, cancel: cancel})
 }
+
+const nodeToWeb = (nodeStream) => {
+  if (typeof ReadableStream === 'undefined') throw new Error('No web ReadableStream support')
+
+  return new ReadableStream(new NodeToWebStreamSource(nodeStream))
+}
+
+module.exports = nodeToWeb
