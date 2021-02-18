@@ -2,25 +2,30 @@
 /* global ReadableStream */
 
 class NodeToWebStreamSource {
-  _readableCallback = null
-  _controller = null
-
   constructor (nodeStream) {
     this._nodeStream = nodeStream
+
+    this._readableCallback = null
+    this._controller = null
+
+    this._handlers = {
+      end: this._onClose.bind(this),
+      close: this._onClose.bind(this),
+      error: this._onError.bind(this),
+      readable: this._onReadable.bind(this)
+    }
   }
 
   // Stream methods
   start (controller) {
     this._controller = controller
 
-    this._nodeStream.on('close', this._onClose)
-    this._nodeStream.on('end', this._onClose)
-    this._nodeStream.on('error', this._onError)
-    this._nodeStream.on('readable', this._onReadable)
+    for (const [event, handler] of Object.entries(this._handlers)) {
+      this._nodeStream.on(event, handler)
+    }
   }
 
   async pull () {
-    console.log('pull')
     let isFirstRead = true
 
     while (true) {
@@ -31,13 +36,13 @@ class NodeToWebStreamSource {
           await new Promise((resolve) => {
             this._readableCallback = resolve
           })
+          continue
         } else {
           break
         }
       }
 
       isFirstRead = false
-      console.log('enqueue')
       this._controller.enqueue(chunk)
     }
   }
@@ -48,20 +53,17 @@ class NodeToWebStreamSource {
   }
 
   // Internal methods
-  _onClose = () => {
-    console.log('close')
+  _onClose () {
     this._destroy()
     this._controller.close()
   }
 
-  _onError = (err) => {
-    console.log('error')
+  _onError (err) {
     this._destroy()
     this._controller.error(err)
   }
 
-  _onReadable = () => {
-    console.log('readable')
+  _onReadable () {
     if (this._readableCallback) {
       this._readableCallback()
       this._readableCallback = null
@@ -69,10 +71,9 @@ class NodeToWebStreamSource {
   }
 
   _destroy () {
-    this._nodeStream.off('close', this._onClose)
-    this._nodeStream.off('end', this._onClose)
-    this._nodeStream.off('error', this._onError)
-    this._nodeStream.off('readable', this._onReadable)
+    for (const [event, handler] of Object.entries(this._handlers)) {
+      this._nodeStream.off(event, handler)
+    }
   }
 }
 
