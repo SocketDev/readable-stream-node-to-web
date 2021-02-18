@@ -29,7 +29,7 @@ class NodeToWebStreamSource {
     let isFirstRead = true
 
     while (true) {
-      const chunk = this._nodeStream.read()
+      let chunk = this._nodeStream.read()
       if (chunk === null) {
         if (isFirstRead) {
           // Wait for at least one chunk
@@ -43,6 +43,10 @@ class NodeToWebStreamSource {
       }
 
       isFirstRead = false
+      // Convert `Buffer` (which subclasses Uint8Array) to real Uint8Array
+      if (chunk instanceof Uint8Array) {
+        chunk = new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength)
+      }
       this._controller.enqueue(chunk)
     }
   }
