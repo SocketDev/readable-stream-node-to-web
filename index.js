@@ -51,9 +51,9 @@ class NodeToWebStreamSource {
     }
   }
 
-  cancel () {
+  cancel (reason) {
     this._destroy()
-    this._nodeStream.destroy()
+    this._nodeStream.destroy(reason)
   }
 
   // Internal methods
