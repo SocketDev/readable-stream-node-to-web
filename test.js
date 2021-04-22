@@ -76,7 +76,7 @@ function streamToString (stream) {
     function onRead (result) {
       if (result.done) return resolve(buffer)
 
-      buffer += result.value.toString()
+      buffer += Buffer.from(result.value).toString()
       reader.read().then(onRead)
     }
   })
