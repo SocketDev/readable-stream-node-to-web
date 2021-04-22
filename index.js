@@ -53,7 +53,15 @@ class NodeToWebStreamSource {
 
   cancel (reason) {
     this._destroy()
-    this._nodeStream.destroy(reason)
+
+    let err
+    if (reason instanceof Error) {
+      err = reason
+    } else if (reason) {
+      err = Error(`Stream cancelled for non-error reason: ${reason}`)
+    }
+
+    this._nodeStream.destroy(err)
   }
 
   // Internal methods
